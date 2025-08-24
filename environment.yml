@@ -1,0 +1,20 @@
+name: llm_torch
+channels:
+  - pytorch
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy=2.3.2
+  - pandas=2.3.1
+  - scikit-learn=1.7.1
+  - pip
+  - pip:
+      - torch==2.8.0+cu129
+      - torchvision==0.23.0+cu129
+      - torchaudio==2.8.0+cu129
+      - brotlicffi==1.0.9.2
+      - huggingface-hub==0.34.4
+      - datasets==4.0.0
+      - transformers==4.55.2
+      - peft==0.17.0
