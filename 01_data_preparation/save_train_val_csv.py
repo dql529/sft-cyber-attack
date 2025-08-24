@@ -55,6 +55,7 @@ for col in cols_to_categorize:
 
 label2id = {v: k for k, v in LABEL_MAP.items()}
 df["attack_cat"] = df["attack_cat"].str.strip()
+# 转换label列，并处理无法映射的情况
 df["label"] = df["attack_cat"].map(label2id)
 num_null_labels = df["label"].isnull().sum()
 if num_null_labels > 0:
