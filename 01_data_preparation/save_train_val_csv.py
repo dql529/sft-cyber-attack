@@ -95,8 +95,10 @@ def build_prompt(row):
     ]
 
     # 智能处理 'service' 字段
-    if row['service'] != '-' and pd.notna(row['service']):
-        description_parts.append(f"The connection service was identified as {row['service']}.")
+    if row["service"] != "-" and pd.notna(row["service"]):
+        description_parts.append(
+            f"The connection service was identified as {row['service']}."
+        )
     else:
         description_parts.append("The connection service was not specified.")
 
@@ -112,17 +114,19 @@ def build_prompt(row):
     )
 
     # 仅当协议是 tcp 且 tcprtt > 0 时，才添加 TCP RTT 信息
-    if row['proto'] == 'tcp' and row['tcprtt'] > 0:
+    if row["proto"] == "tcp" and row["tcprtt"] > 0:
         description_parts.append(f"The TCP round-trip time was {row['tcprtt_cat']}.")
 
     # 添加历史访问信息，并微调措辞
-    description_parts.append(f"The source has connected to this same service {row['ct_srv_src']} times before.")
+    description_parts.append(
+        f"The source has connected to this same service {row['ct_srv_src']} times before."
+    )
 
     # 将所有描述部分用空格连接成一个完整的字符串
     traffic_description = " ".join(description_parts)
 
     # 使用三重引号构建一个清晰、多行的 f-string 模板
-    prompt = f'''You are an expert cybersecurity analyst. Your task is to classify network 
+    prompt = f"""You are an expert cybersecurity analyst. Your task is to classify network 
       traffic into ONE of the following categories: {class_labels}.
 
    Follow these rules strictly:
@@ -139,9 +143,11 @@ def build_prompt(row):
    ---
    [Task]
    Input: {traffic_description}
-   Answer:'''
+   Answer:"""
 
     return prompt
+
+
 # ==============================================================================
 
 
@@ -161,5 +167,5 @@ print(f"- {PROMPT_VAL_CSV}")
 
 # 打印一个样本以供检查
 print("\n--- 生成的Prompt样本 ---")
-print(train_df.iloc[0]['text'])
+print(train_df.iloc[0]["text"])
 print("--------------------------")
