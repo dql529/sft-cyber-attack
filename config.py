@@ -1,15 +1,18 @@
 # Shared configurations for the project
 
 # --- Paths ---
-BASE_MODEL_PATH = "./models/gemma-3-270m"
-# BASE_MODEL_PATH = "./models/deepseek-coder-1.3b-base"
+# BASE_MODEL_PATH = "./models/gemma-3-270m"
+BASE_MODEL_PATH = "./models/deepseek-coder-1.3b-base"
 # BASE_MODEL_PATH = "./models/bert-base-uncased"
 
 RAW_DATA_CSV = "./data/Augmented-UNSW_NB15.csv"
 FILTERED_DATA_CSV = "./data/unsw15_filtered_nolog.csv"
 
 PROMPT_TRAIN_CSV = "./data/prompt_csv/unsw15_prompt_train.csv"
+PROMPT_TRAIN_CSV_MINI = "./data/prompt_csv/unsw15_prompt_train_mini.csv"
+
 PROMPT_VAL_CSV = "./data/prompt_csv/unsw15_prompt_val.csv"
+PROMPT_VAL_CSV_MINI = "./data/prompt_csv/unsw15_prompt_val_mini.csv"
 
 TOKENIZED_TRAIN_PATH = "./cached/tokenized_train"
 TOKENIZED_VAL_PATH = "./cached/tokenized_val"

@@ -5,10 +5,10 @@ import os
 # 输入文件路径
 INPUT_CSV_PATH = "./data/prompt_csv/unsw15_prompt_train.csv"
 # 输出文件路径
-OUTPUT_CSV_PATH = "./data/prompt_csv/unsw15_prompt_val_mini.csv"
+OUTPUT_CSV_PATH = "./data/prompt_csv/unsw15_prompt_train_mini.csv"
 
 # 每个类别要抽取的样本数量
-SAMPLES_PER_CLASS = 100
+SAMPLES_PER_CLASS = 300
 # 标签列的名称
 LABEL_COLUMN = "label"
 # 随机种子，确保每次运行结果一致
