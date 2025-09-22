@@ -20,9 +20,10 @@ def rp(p: str) -> str:
     return p
 
 
-# ---------- 文本清洗 ----------
+# ---------- 文本清洗（更鲁棒） ----------
+# 兼容大小写、CRLF；允许以 'Answer:'、'---' 或文件结尾为终止
 _TASK_RE = re.compile(
-    r"\[Task\].*?Input:\s*(.*?)(?:\n\s*Answer:|\nAnswer:|\n\s*---|\Z)", re.S
+    r"\[task\].*?input:\s*(.*?)(?:\r?\n\s*answer:|\r?\n\s*---|\Z)", re.S | re.I
 )
 
 
@@ -32,24 +33,31 @@ def extract_task_description(text: str) -> str:
     m = _TASK_RE.search(text)
     if m:
         return " ".join(m.group(1).strip().split())
+    # 没匹配上就返回压缩后的原文（裁 512）
     return " ".join(text.split())[:512]
 
 
-def apply_cleaning(texts, cleaning_mode: str):
+def apply_cleaning(texts, cleaning_mode: str, min_len: int = 30):
     """
     cleaning_mode in {"task_only", "raw_prompt"}
-    - task_only: 仅保留 [Task] Input 的流量描述
-    - raw_prompt: 不清洗，原样输入
+    - task_only: 仅保留 [Task] Input 的流量描述；若文本过短(<min_len)回退 raw
+    - raw_prompt: 原文，压缩多余空白
     """
     if cleaning_mode not in {"task_only", "raw_prompt"}:
         raise ValueError(f"Unknown cleaning_mode: {cleaning_mode}")
-    if cleaning_mode == "task_only":
-        return [extract_task_description(t) for t in texts]
-    else:
-        return [t if isinstance(t, str) else "" for t in texts]
+    cleaned = []
+    for t in texts:
+        if cleaning_mode == "task_only":
+            c = extract_task_description(t)
+            if len(c) < min_len:
+                c = " ".join((t if isinstance(t, str) else "").split())[:512]
+        else:
+            c = " ".join((t if isinstance(t, str) else "").split())[:512]
+        cleaned.append(c)
+    return cleaned
 
 
-# ---------- BERT 编码（mean pooling） ----------
+# ---------- BERT 编码（支持 mean/cls + 截断侧） ----------
 def load_encoder(encoder_name: str, device: str = None):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     tok = AutoTokenizer.from_pretrained(encoder_name)
@@ -59,7 +67,22 @@ def load_encoder(encoder_name: str, device: str = None):
 
 
 @torch.no_grad()
-def encode_texts(texts, tokenizer, model, device, max_len=256, batch_size=16):
+def encode_texts(
+    texts,
+    tokenizer,
+    model,
+    device,
+    max_len: int = 256,
+    batch_size: int = 16,
+    pooling: str = "mean",  # "mean" | "cls"
+    truncation_side: str = "right",  # "right"=保开头 | "left"=保尾部
+):
+    """
+    Encode texts into embeddings.
+    - pooling: "mean" (默认) 或 "cls"
+    - truncation_side: "right"（默认，保开头）; "left"（保尾部；raw_prompt 场景常用）
+    """
+    tokenizer.truncation_side = truncation_side
     vecs = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
@@ -72,8 +95,13 @@ def encode_texts(texts, tokenizer, model, device, max_len=256, batch_size=16):
         )
         enc = {k: v.to(device) for k, v in enc.items()}
         out = model(**enc, return_dict=True)
-        last = out.last_hidden_state  # [B,L,H]
-        mask = enc["attention_mask"].unsqueeze(-1)  # [B,L,1]
-        pooled = (last * mask).sum(1) / mask.sum(1).clamp(min=1e-9)  # mean
+        last = out.last_hidden_state  # [B, L, H]
+
+        if pooling == "cls":
+            pooled = last[:, 0, :]  # [CLS]
+        else:
+            mask = enc["attention_mask"].unsqueeze(-1)
+            pooled = (last * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+
         vecs.append(pooled.cpu().numpy())
     return np.vstack(vecs)

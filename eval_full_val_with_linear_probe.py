@@ -3,15 +3,58 @@ import os, sys, numpy as np, pandas as pd
 from joblib import load
 
 from nlp_shared import rp, PREP_VERSION, apply_cleaning, load_encoder, encode_texts
-from config import PROMPT_VAL_CSV, PROMPT_VAL_CSV_MINI, LABEL_MAP
 
-# ---- 开关 ----
-USE_VAL_MINI = False
+# ---- 项目配置 ----
+from config import (
+    PROMPT_TRAIN_CSV,
+    PROMPT_TRAIN_CSV_MINI,
+    PROMPT_TRAIN_CSV_MEDIUM,
+    PROMPT_VAL_CSV,
+    PROMPT_VAL_CSV_MINI,
+    PROMPT_VAL_CSV_MEDIUM,
+    LABEL_MAP,
+)
+
+# 选择 train/val CSV 路径（更稳健的写法）
+# 确保 nlp_shared.rp 已导入
+# ---- 开关与参数（按需改动）----
+USE_TRAIN_MINI = True
+USE_TRAIN_MEDIUM = False
+USE_VAL_MINI = True
+USE_VAL_MEDIUM = False
+# ---- end ----
+
+# 防止同时多开
+if sum([bool(USE_TRAIN_MINI), bool(USE_TRAIN_MEDIUM)]) > 1:
+    raise RuntimeError(
+        "Train selection ambiguous: only one of USE_TRAIN_MINI/USE_TRAIN_MEDIUM may be True."
+    )
+if sum([bool(USE_VAL_MINI), bool(USE_VAL_MEDIUM)]) > 1:
+    raise RuntimeError(
+        "Val selection ambiguous: only one of USE_VAL_MINI/USE_VAL_MEDIUM may be True."
+    )
+
+# train csv selection
+if USE_TRAIN_MINI:
+    TRAIN_CSV = rp(PROMPT_TRAIN_CSV_MINI)
+elif USE_TRAIN_MEDIUM:
+    TRAIN_CSV = rp(PROMPT_TRAIN_CSV_MEDIUM)
+else:
+    TRAIN_CSV = rp(PROMPT_TRAIN_CSV)
+
+# val csv selection
+if USE_VAL_MINI:
+    VAL_CSV = rp(PROMPT_VAL_CSV_MINI)
+elif USE_VAL_MEDIUM:
+    VAL_CSV = rp(PROMPT_VAL_CSV_MEDIUM)
+else:
+    VAL_CSV = rp(PROMPT_VAL_CSV)
+
+# 日志打印
+print(f"[CONFIG] TRAIN_CSV = {TRAIN_CSV}")
+print(f"[CONFIG] val_csv   = {VAL_CSV}")
 BERT_JOBLIB = "./bert_outputs/linear_probe.joblib"
 # -------------
-
-VAL_CSV = rp(PROMPT_VAL_CSV_MINI if USE_VAL_MINI else PROMPT_VAL_CSV)
-print(f"[CFG] VAL={VAL_CSV}  joblib={BERT_JOBLIB}")
 
 bundle = load(rp(BERT_JOBLIB))
 clf, scaler, meta = bundle["clf"], bundle["scaler"], bundle.get("meta", {})
