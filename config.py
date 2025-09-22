@@ -16,6 +16,9 @@ PROMPT_VAL_CSV_MINI = "./data/prompt_csv/unsw15_prompt_val_mini.csv"
 
 TOKENIZED_TRAIN_PATH = "./cached/tokenized_train"
 TOKENIZED_VAL_PATH = "./cached/tokenized_val"
+# config.py
+PROMPT_TRAIN_CSV_MEDIUM = "./data/prompt_csv/unsw15_prompt_train_medium.csv"
+PROMPT_VAL_CSV_MEDIUM = "./data/prompt_csv/unsw15_prompt_val_medium.csv"
 
 OUTPUT_DIR = "./checkpoints/lora_gemma_clm"
 

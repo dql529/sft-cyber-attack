@@ -1,186 +1,139 @@
-# hybrid_agent.py  —— 无 argparse 版本（代码内开关）
-import os, sys, re
-import numpy as np
-import pandas as pd
-import torch
+# hybrid_agent.py —— 无 argparse，自动按 meta 对齐（训练/推理一致）
+import os, sys, numpy as np, pandas as pd, torch
 from joblib import load
-from transformers import AutoTokenizer, AutoModel, pipeline
-from sklearn.metrics import classification_report, confusion_matrix
+from transformers import pipeline
 
-# ---------------- 基本路径与配置 ----------------
-ROOT = os.path.dirname(os.path.abspath(__file__))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+from nlp_shared import rp, PREP_VERSION, apply_cleaning, load_encoder, encode_texts
+from config import PROMPT_VAL_CSV, PROMPT_VAL_CSV_MINI, LABEL_MAP
 
-from config import (
-    PROMPT_VAL_CSV,
-    PROMPT_VAL_CSV_MINI,
-    LABEL_MAP,
-)
+# ---- 开关与参数 ----
+USE_VAL_MINI = True
+BERT_JOBLIB = "./bert_outputs/linear_probe.joblib"
 
+# “auto” = 使用 joblib.meta；也可手写为具体值，但建议 auto，避免不一致
+ENCODER = "auto"  # or "bert-base-uncased"
+MAX_LEN = "auto"  # or 256
+CLEANING_MODE = "auto"  # or "task_only" / "raw_prompt"
 
-def rp(p: str) -> str:
-    return (
-        os.path.join(ROOT, p.lstrip("./"))
-        if isinstance(p, str) and (p.startswith("./") or p.startswith("../"))
-        else p
-    )
+# 兜底阈值/LLM
+TAU = 0.85
+LLM_MODEL = "facebook/bart-large-mnli"
+LLM_BATCH = 16
+SAVE_FALLBACK_CSV = "./bert_outputs/fallback_samples.csv"
+# --------------------
 
-
-# ============= 代码内开关（自行修改） =============
-# 是否使用 mini 验证集
-USE_VAL_MINI = True  # True 用 PROMPT_VAL_CSV_MINI，False 用 PROMPT_VAL_CSV
-
-# 模型与运行参数
-ENCODER = "bert-base-uncased"  # BERT 编码器
-BERT_JOBLIB = "./bert_outputs/linear_probe.joblib"  # 之前保存好的 LR 分类器与 scaler
-BATCH = 16  # 编码 batch size
-MAX_LEN = 256  # 编码最大长度
-TAU = 0.85  # 置信度阈值：低于此阈值走 LLM 兜底
-LLM_MODEL = "facebook/bart-large-mnli"  # zero-shot NLI 模型
-LLM_EXPLAIN = False  # 低置信样本是否生成一句“理由”（可选，较慢）
-# ===============================================
-
-# 设备
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-DEV_ID = 0 if torch.cuda.is_available() else -1
-
-# 选择验证集
 VAL_CSV = rp(PROMPT_VAL_CSV_MINI if USE_VAL_MINI else PROMPT_VAL_CSV)
+print(f"[CFG] VAL={VAL_CSV}")
+print(f"[CFG] joblib={BERT_JOBLIB}  τ={TAU}  LLM={LLM_MODEL}")
 
-# 标签映射
-ID2NAME = LABEL_MAP
-NAME2ID = {v: k for k, v in LABEL_MAP.items()}
-
-# 打印配置
-print(f"[CFG] Device={DEVICE}  Encoder={ENCODER}")
-print(f"[CFG] VAL_CSV={VAL_CSV}")
-print(f"[CFG] TAU={TAU}  LLM_MODEL={LLM_MODEL}  Explain={LLM_EXPLAIN}")
-print(f"[CFG] BERT_JOBLIB={BERT_JOBLIB}")
-
-# ---------------- 加载 BERT 分类器（线性探针） ----------------
-bundle = load(rp(BERT_JOBLIB))  # 期望 {"clf": ..., "scaler": ...}
+# 加载 joblib + meta
+bundle = load(rp(BERT_JOBLIB))
 clf = bundle["clf"]
 scaler = bundle["scaler"]
+meta = bundle.get("meta", {})
 
-# ---------------- 文本清洗（仅保留 [Task] Input 段） ----------------
-TASK_RE = re.compile(
-    r"\[Task\].*?Input:\s*(.*?)(?:\n\s*Answer:|\nAnswer:|\n\s*---|\Z)", re.S
-)
+print("[META from joblib]", meta)
+# 解析/对齐 meta
+enc_name = meta.get("encoder") if ENCODER == "auto" else ENCODER
+max_len = meta.get("max_len") if MAX_LEN == "auto" else MAX_LEN
+clean_mode = meta.get("cleaning_mode") if CLEANING_MODE == "auto" else CLEANING_MODE
 
-
-def extract_task_description(text: str) -> str:
-    if not isinstance(text, str):
-        return ""
-    m = TASK_RE.search(text)
-    if m:
-        return " ".join(m.group(1).strip().split())
-    return " ".join(text.split())[:512]
-
-
-# ---------------- 初始化编码器 ----------------
-tok = AutoTokenizer.from_pretrained(ENCODER)
-enc_model = AutoModel.from_pretrained(ENCODER).to(DEVICE)
-enc_model.eval()
-
-
-def encode_batch(texts):
-    vecs = []
-    for i in range(0, len(texts), BATCH):
-        batch = texts[i : i + BATCH]
-        enc = tok(
-            batch,
-            truncation=True,
-            padding=True,
-            max_length=MAX_LEN,
-            return_tensors="pt",
+# 严格校验（防错用）
+if meta:
+    if enc_name != meta.get("encoder"):
+        raise RuntimeError(
+            f"Encoder mismatch: joblib={meta.get('encoder')} vs run={enc_name}"
         )
-        enc = {k: v.to(DEVICE) for k, v in enc.items()}
-        with torch.no_grad():
-            out = enc_model(**enc, return_dict=True)
-            last = out.last_hidden_state  # [B, L, H]
-            mask = enc["attention_mask"].unsqueeze(-1)  # [B, L, 1]
-            pooled = (last * mask).sum(1) / mask.sum(1).clamp(min=1e-9)  # mean pooling
-            vecs.append(pooled.cpu().numpy())
-    return np.vstack(vecs)
-
-
-# ---------------- LLM 兜底（zero-shot NLI） ----------------
-candidate_labels = [v for _, v in LABEL_MAP.items()]
-zshot = pipeline("zero-shot-classification", model=LLM_MODEL, device=DEV_ID)
-
-
-def llm_fallback(texts):
-    """
-    对低置信文本调用 NLI，返回 [(pred_name, score, rationale), ...]
-    """
-    out = []
-    for t in texts:
-        res = zshot(
-            t,
-            candidate_labels,
-            multi_label=False,
-            hypothesis_template="This traffic instance is {}.",
+    if max_len != meta.get("max_len"):
+        raise RuntimeError(
+            f"max_len mismatch: joblib={meta.get('max_len')} vs run={max_len}"
         )
-        pred = res["labels"][0]
-        score = float(res["scores"][0])
-        rationale = ""
-        if LLM_EXPLAIN:
-            # 简单一行解释（注意：使用的是同一模型做生成，成本较高，可按需关闭）
-            expl_ids = zshot.model.generate(
-                **zshot.tokenizer(
-                    f"Explain in one sentence why the label '{pred}' fits this traffic:\n\n{t}\n\nAnswer:",
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=512,
-                ).to(zshot.device),
-                max_new_tokens=32,
-                do_sample=False,
-                eos_token_id=zshot.tokenizer.eos_token_id,
-            )
-            expl = zshot.tokenizer.decode(expl_ids[0], skip_special_tokens=True)
-            rationale = expl.split("Answer:")[-1].strip()
-        out.append((pred, score, rationale))
-    return out
+    if clean_mode != meta.get("cleaning_mode"):
+        raise RuntimeError(
+            f"cleaning_mode mismatch: joblib={meta.get('cleaning_mode')} vs run={clean_mode}"
+        )
+else:
+    print(
+        "[WARN] joblib has no meta; proceed but ensure settings match training manually."
+    )
 
+print(f"[ALIGN] encoder={enc_name}  max_len={max_len}  cleaning={clean_mode}")
 
-# ---------------- 读取数据 & 推理 ----------------
+# 读取数据并做与训练一致的清洗
 df = pd.read_csv(VAL_CSV)
 texts_raw = df["text"].astype(str).tolist()
-labels_true = df["label"].astype(int).tolist()
-texts = [extract_task_description(t) for t in texts_raw]
+labels_true = df["label"].astype(int).to_numpy()
+texts = apply_cleaning(texts_raw, clean_mode)
 
-print("[RUN] Encoding with BERT ...")
-X = encode_batch(texts)
+# BERT 编码（按 meta 对齐）
+tok, mdl, device = load_encoder(enc_name)
+print(f"[ENC] device={device}")
+X = encode_texts(texts, tok, mdl, device, max_len=max_len, batch_size=16)
 Xn = scaler.transform(X)
 
-print("[RUN] Predicting with BERT+LR ...")
+# 先用 BERT+LR 预测
 if hasattr(clf, "predict_proba"):
     proba = clf.predict_proba(Xn)
     y_hat = proba.argmax(1)
     conf = proba.max(1)
 else:
     scores = clf.decision_function(Xn)
-    if scores.ndim == 1:  # binary fallback
+    if scores.ndim == 1:
         scores = np.vstack([-scores, scores]).T
     y_hat = scores.argmax(1)
-    conf = scores.max(1)  # 未校准
-    print("[WARN] classifier 无 predict_proba，使用 decision_function，置信度未校准。")
+    conf = scores.max(1)
+    print("[WARN] classifier has no predict_proba; conf is uncalibrated.")
 
-# 低置信度样本 → LLM 兜底
-need_fallback_idx = np.where(conf < TAU)[0].tolist()
-print(f"[RUN] Low-confidence count (<{TAU}): {len(need_fallback_idx)}")
+# 找低置信样本
+need = np.where(conf < TAU)[0].tolist()
+print(f"[RUN] low-confidence (<{TAU}): {len(need)} / {len(texts)}")
 
+# LLM 兜底（批量）
 pred_final = y_hat.copy()
-if need_fallback_idx:
-    llm_inputs = [texts[i] for i in need_fallback_idx]
-    zres = llm_fallback(llm_inputs)
-    for j, (name, score, rationale) in zip(need_fallback_idx, zres):
-        pred_final[j] = NAME2ID.get(name, pred_final[j])
-        # 如需把 rationale 记录下来，可自行收集
+if need:
+    cand_labels = [v for _, v in LABEL_MAP.items()]
+    zshot = pipeline(
+        "zero-shot-classification",
+        model=LLM_MODEL,
+        device=(0 if torch.cuda.is_available() else -1),
+    )
+    # 分批调用，避免“sequential”警告
+    records = []
+    for i in range(0, len(need), LLM_BATCH):
+        idxs = need[i : i + LLM_BATCH]
+        batch_inputs = [texts[j] for j in idxs]
+        results = zshot(batch_inputs, cand_labels, multi_label=False)
+        # HF pipeline 对单个/多个输入返回格式不同，统一成 list
+        if isinstance(results, dict):
+            results = [results]
+        for k, j in enumerate(idxs):
+            pred_name = results[k]["labels"][0]
+            score = float(results[k]["scores"][0])
+            pred_id = {v: k for k, v in LABEL_MAP.items()}.get(pred_name, pred_final[j])
+            records.append(
+                {
+                    "index": j,
+                    "raw_text": texts_raw[j],
+                    "clean_text": texts[j],
+                    "bert_conf": float(conf[j]),
+                    "bert_pred": int(y_hat[j]),
+                    "llm_pred_name": pred_name,
+                    "llm_pred_score": score,
+                    "final_pred": int(pred_id),
+                }
+            )
+            pred_final[j] = pred_id
+    # 保存兜底细节，便于分析
+    os.makedirs(rp("./bert_outputs"), exist_ok=True)
+    import pandas as pd
 
-# ---------------- 指标输出 ----------------
-print("\n=== Hybrid Agent Report (BERT primary, LLM fallback) ===")
+    pd.DataFrame(records).to_csv(rp(SAVE_FALLBACK_CSV), index=False)
+    print("[SAVE] fallback samples ->", rp(SAVE_FALLBACK_CSV))
+
+# 指标
+from sklearn.metrics import classification_report, confusion_matrix
+
+print("\n=== Hybrid Agent (BERT primary + LLM fallback) ===")
 print(
     classification_report(
         labels_true,
