@@ -1,118 +1,117 @@
-# bert_linear_probe_run.py
-import os, sys, math, argparse
-import numpy as np, pandas as pd, torch
+# bert_linear_probe_run.py  —— 无 argparse 版
+import os, sys, re
+import numpy as np
+import pandas as pd
+import torch
 from transformers import AutoTokenizer, AutoModel
+from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
-from sklearn.preprocessing import StandardScaler
 from joblib import dump
 
-# --- project root resolution so you can run from subfolders ---
-_this_file = os.path.abspath(__file__)
-_project_root = os.path.dirname(_this_file)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+# ---------- 基本配置 ----------
+ROOT = os.path.dirname(os.path.abspath(__file__))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 from config import (
     PROMPT_TRAIN_CSV,
+    PROMPT_TRAIN_CSV_MINI,
     PROMPT_VAL_CSV,
     PROMPT_VAL_CSV_MINI,
     LABEL_MAP,
-    PROMPT_TRAIN_CSV_MINI,
 )
 
 
-def resolve(p):
-    if isinstance(p, str) and (p.startswith("./") or p.startswith("../")):
-        return os.path.join(_project_root, p.lstrip("./"))
-    return p
+def rp(p):
+    return (
+        os.path.join(ROOT, p.lstrip("./"))
+        if isinstance(p, str) and (p.startswith("./") or p.startswith("../"))
+        else p
+    )
 
 
-PROMPT_TRAIN_CSV = resolve(PROMPT_TRAIN_CSV_MINI)
-PROMPT_VAL_CSV = resolve(PROMPT_VAL_CSV_MINI)
+# 开关 & 参数
+USE_TRAIN_MINI = True
+USE_VAL_MINI = True
+ENCODER = "bert-base-uncased"
+BATCH = 16
+MAX_LEN = 256
+SAVE_PATH = "./bert_outputs/linear_probe.joblib"
+# -----------------------------
 
+train_csv = rp(PROMPT_TRAIN_CSV_MINI if USE_TRAIN_MINI else PROMPT_TRAIN_CSV)
+val_csv = rp(PROMPT_VAL_CSV_MINI if USE_VAL_MINI else PROMPT_VAL_CSV)
+os.makedirs(rp("./bert_outputs"), exist_ok=True)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--encoder", default="bert-base-uncased", help="encoder model id")
-parser.add_argument(
-    "--use_subset", action="store_true", help="use subset for quick test"
-)
-parser.add_argument("--subset_train", type=int, default=2000)
-parser.add_argument("--subset_val", type=int, default=2000)
-parser.add_argument("--batch", type=int, default=32)
-parser.add_argument("--max_len", type=int, default=256)
-parser.add_argument("--save_path", default="./bert_outputs/linear_probe.joblib")
-args = parser.parse_args()
-
+print(f"[DATA] TRAIN={train_csv}")
+print(f"[DATA] VAL  ={val_csv}")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-print("Device:", DEVICE, "| Encoder:", args.encoder)
+print(f"[CFG] ENCODER={ENCODER}  DEVICE={DEVICE}")
 
-tokenizer = AutoTokenizer.from_pretrained(args.encoder)
-model = AutoModel.from_pretrained(args.encoder).to(DEVICE)
+TASK_RE = re.compile(
+    r"\[Task\].*?Input:\s*(.*?)(?:\n\s*Answer:|\nAnswer:|\n\s*---|\Z)", re.S
+)
+
+
+def clean_text(s: str) -> str:
+    if not isinstance(s, str):
+        return ""
+    m = TASK_RE.search(s)
+    t = m.group(1).strip() if m else s
+    return " ".join(t.split())
+
+
+# 读数据 & 清洗
+tr = pd.read_csv(train_csv)
+va = pd.read_csv(val_csv)
+tr_texts = tr["text"].astype(str).apply(clean_text).tolist()
+va_texts = va["text"].astype(str).apply(clean_text).tolist()
+y_tr = tr["label"].astype(int).to_numpy()
+y_va = va["label"].astype(int).to_numpy()
+
+# 编码器
+tok = AutoTokenizer.from_pretrained(ENCODER)
+model = AutoModel.from_pretrained(ENCODER).to(DEVICE)
 model.eval()
 
 
-def encode_texts(texts, batch_size=32, max_len=256):
+def encode(texts):
     vecs = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        enc = tokenizer(
-            batch,
-            truncation=True,
-            padding=True,
-            max_length=max_len,
-            return_tensors="pt",
+    for i in range(0, len(texts), BATCH):
+        b = texts[i : i + BATCH]
+        enc = tok(
+            b, truncation=True, padding=True, max_length=MAX_LEN, return_tensors="pt"
         )
         enc = {k: v.to(DEVICE) for k, v in enc.items()}
         with torch.no_grad():
-            out = model(**enc, return_dict=True)
-            last = out.last_hidden_state  # [B,L,H]
-            mask = enc["attention_mask"].unsqueeze(-1)
-            summed = (last * mask).sum(1)
-            denom = mask.sum(1).clamp(min=1e-9)
-            pooled = (summed / denom).cpu().numpy()
-            vecs.append(pooled)
+            h = model(**enc, return_dict=True).last_hidden_state
+            m = enc["attention_mask"].unsqueeze(-1)
+            pooled = (h * m).sum(1) / m.sum(1).clamp(min=1e-9)  # mean pooling
+            vecs.append(pooled.cpu().numpy())
     return np.vstack(vecs)
 
 
-# load data
-print("Loading CSVs...")
-train_df = pd.read_csv(PROMPT_TRAIN_CSV)
-val_df = pd.read_csv(PROMPT_VAL_CSV)  # full val by default
+print("[RUN] Encoding train ...")
+X_tr = encode(tr_texts)
+print("[RUN] Encoding val ...")
+X_va = encode(va_texts)
 
-if args.use_subset:
-    train_df = train_df.sample(n=min(args.subset_train, len(train_df)), random_state=42)
-    val_df = val_df.sample(n=min(args.subset_val, len(val_df)), random_state=42)
-
-print("Train rows:", len(train_df), "Val rows:", len(val_df))
-
-# encode
-print("Encoding train...")
-X_train = encode_texts(
-    train_df["text"].astype(str).tolist(), batch_size=args.batch, max_len=args.max_len
-)
-y_train = train_df["label"].astype(int).to_numpy()
-print("Encoding val...")
-X_val = encode_texts(
-    val_df["text"].astype(str).tolist(), batch_size=args.batch, max_len=args.max_len
-)
-y_val = val_df["label"].astype(int).to_numpy()
-
-# scale & fit
+# 标准化 + LR
 scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_val = scaler.transform(X_val)
+X_tr_n = scaler.fit_transform(X_tr)
+X_va_n = scaler.transform(X_va)
 
-print("Training logistic regression...")
+print("[RUN] Fitting LogisticRegression ...")
 clf = LogisticRegression(
     max_iter=2000, multi_class="multinomial", solver="lbfgs", class_weight="balanced"
 )
-clf.fit(X_train, y_train)
+clf.fit(X_tr_n, y_tr)
 
-y_pred = clf.predict(X_val)
-print("\n=== Linear-probe Classification Report ===")
+y_pred = clf.predict(X_va_n)
+print("\n=== Linear-probe Report ===")
 print(
     classification_report(
-        y_val,
+        y_va,
         y_pred,
         labels=list(LABEL_MAP.keys()),
         target_names=list(LABEL_MAP.values()),
@@ -120,10 +119,8 @@ print(
     )
 )
 print(
-    "Confusion matrix:\n",
-    confusion_matrix(y_val, y_pred, labels=list(LABEL_MAP.keys())),
+    "Confusion matrix:\n", confusion_matrix(y_va, y_pred, labels=list(LABEL_MAP.keys()))
 )
 
-os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
-dump({"clf": clf, "scaler": scaler}, args.save_path)
-print("Saved classifier+scaler to:", args.save_path)
+dump({"clf": clf, "scaler": scaler}, rp(SAVE_PATH))
+print("Saved model to:", rp(SAVE_PATH))

@@ -1,5 +1,5 @@
-# bert_finetune_train.py
-import os, sys, argparse, numpy as np, torch, re
+# bert_finetune_train.py —— 无 argparse 版
+import os, sys, re, numpy as np, torch
 from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
@@ -10,7 +10,7 @@ from transformers import (
 )
 from sklearn.utils.class_weight import compute_class_weight
 
-# --- resolve project root & config ---
+# ---------- 基本配置 ----------
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -26,36 +26,33 @@ from config import (
 def rp(p):
     return (
         os.path.join(ROOT, p.lstrip("./"))
-        if p.startswith("./") or p.startswith("../")
+        if isinstance(p, str) and (p.startswith("./") or p.startswith("../"))
         else p
     )
 
 
-# --- args ---
-ap = argparse.ArgumentParser()
-ap.add_argument("--encoder", default="bert-base-uncased")
-ap.add_argument("--use_train_mini", action="store_true")
-ap.add_argument("--use_val_mini", action="store_true")
-ap.add_argument("--output_dir", default="./bert_outputs/seqclf")
-ap.add_argument("--epochs", type=int, default=3)
-ap.add_argument("--train_bs", type=int, default=16)
-ap.add_argument("--eval_bs", type=int, default=32)
-ap.add_argument("--lr", type=float, default=2e-5)
-ap.add_argument("--max_len", type=int, default=256)
-ap.add_argument("--fp16", action="store_true")
-args = ap.parse_args()
+USE_TRAIN_MINI = True
+USE_VAL_MINI = True
+ENCODER = "bert-base-uncased"
+OUTPUT_DIR = "./bert_outputs/seqclf"
+EPOCHS = 3
+TRAIN_BS = 8
+EVAL_BS = 16
+LR = 2e-5
+MAX_LEN = 256
+FP16 = True
+# -----------------------------
 
-train_csv = rp(PROMPT_TRAIN_CSV_MINI if args.use_train_mini else PROMPT_TRAIN_CSV)
-val_csv = rp(PROMPT_VAL_CSV_MINI if args.use_val_mini else PROMPT_VAL_CSV)
+train_csv = rp(PROMPT_TRAIN_CSV_MINI if USE_TRAIN_MINI else PROMPT_TRAIN_CSV)
+val_csv = rp(PROMPT_VAL_CSV_MINI if USE_VAL_MINI else PROMPT_VAL_CSV)
+os.makedirs(rp(OUTPUT_DIR), exist_ok=True)
+
 num_labels = len(LABEL_MAP)
 id2label = {k: v for k, v in LABEL_MAP.items()}
 label2id = {v: k for k, v in LABEL_MAP.items()}
 
-print("Encoder:", args.encoder)
-print("Train CSV:", train_csv)
-print("Val   CSV:", val_csv)
+print(f"[CFG] ENCODER={ENCODER}  TRAIN={train_csv}  VAL={val_csv}")
 
-# --- prompt cleaning: 只取 [Task] Input: ... 到 Answer: 之前 ---
 TASK_RE = re.compile(
     r"\[Task\].*?Input:\s*(.*?)(?:\n\s*Answer:|\nAnswer:|\n\s*---|\Z)", re.S
 )
@@ -65,24 +62,22 @@ def clean_text(s: str) -> str:
     if not isinstance(s, str):
         return ""
     m = TASK_RE.search(s)
-    text = m.group(1).strip() if m else s
-    return " ".join(text.split())
+    t = m.group(1).strip() if m else s
+    return " ".join(t.split())
 
 
-# --- load datasets ---
+# 加载与清洗
 train_ds = load_dataset("csv", data_files=train_csv)["train"]
 val_ds = load_dataset("csv", data_files=val_csv)["train"]
-
-# apply cleaning
 train_ds = train_ds.map(lambda e: {"text": clean_text(e["text"])})
 val_ds = val_ds.map(lambda e: {"text": clean_text(e["text"])})
 
-# tokenizer & preprocess
-tok = AutoTokenizer.from_pretrained(args.encoder)
+# Tokenize
+tok = AutoTokenizer.from_pretrained(ENCODER)
 
 
 def preprocess(ex):
-    return tok(ex["text"], truncation=True, max_length=args.max_len)
+    return tok(ex["text"], truncation=True, max_length=MAX_LEN)
 
 
 train_tok = train_ds.map(preprocess, batched=True)
@@ -94,19 +89,19 @@ cols = ["input_ids", "attention_mask", "labels"]
 train_tok.set_format(type="torch", columns=cols)
 val_tok.set_format(type="torch", columns=cols)
 
-# class weights
+# 类别权重
 y = np.array(train_tok["labels"], dtype=int)
 classes = np.arange(num_labels)
 cw = compute_class_weight("balanced", classes=classes, y=y)
 cw = torch.tensor(cw, dtype=torch.float)
 
-# model
+# 模型
 model = AutoModelForSequenceClassification.from_pretrained(
-    args.encoder, num_labels=num_labels, id2label=id2label, label2id=label2id
+    ENCODER, num_labels=num_labels, id2label=id2label, label2id=label2id
 )
 
 
-# weighted loss
+# 加权 loss 的 Trainer
 class WeightedTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False):
         labels = inputs["labels"].to(model.device)
@@ -122,26 +117,25 @@ class WeightedTrainer(Trainer):
 
 
 args_tr = TrainingArguments(
-    output_dir=args.output_dir,
+    output_dir=rp(OUTPUT_DIR),
     evaluation_strategy="epoch",
     save_strategy="epoch",
-    per_device_train_batch_size=args.train_bs,
-    per_device_eval_batch_size=args.eval_bs,
-    learning_rate=args.lr,
-    num_train_epochs=args.epochs,
+    per_device_train_batch_size=TRAIN_BS,
+    per_device_eval_batch_size=EVAL_BS,
+    learning_rate=LR,
+    num_train_epochs=EPOCHS,
     weight_decay=0.01,
     load_best_model_at_end=True,
     metric_for_best_model="eval_loss",
-    fp16=args.fp16,
+    fp16=FP16,
     logging_steps=100,
 )
 
 
 def metrics_fn(p):
-    import numpy as np
     from sklearn.metrics import accuracy_score, f1_score
 
-    preds = np.argmax(p.predictions, axis=1)
+    preds = p.predictions.argmax(1)
     return {
         "accuracy": accuracy_score(p.label_ids, preds),
         "f1_macro": f1_score(p.label_ids, preds, average="macro"),
@@ -157,9 +151,8 @@ trainer = WeightedTrainer(
     data_collator=DataCollatorWithPadding(tok),
     compute_metrics=metrics_fn,
 )
-
 trainer.train()
-save_dir = os.path.join(args.output_dir, "best_model")
+save_dir = rp(os.path.join(OUTPUT_DIR, "best_model"))
 trainer.save_model(save_dir)
 tok.save_pretrained(save_dir)
 print("Saved best model to:", save_dir)
