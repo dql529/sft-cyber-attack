@@ -26,8 +26,8 @@ if ROOT not in sys.path:
 from config import FILTERED_DATA_CSV, LABEL_MAP  # 直接用你现有 config
 
 # ===== 顶部开关 =====
-DATA_TIER = "medium"  # "mini" | "medium" | "full"
-MODEL_TYPE = "rbf"  # "linear" | "rbf"
+DATA_TIER = "mini"  # "mini" | "medium" | "full"
+MODEL_TYPE = "linear"  # "linear" | "rbf"
 RANDOM_STATE = 11
 
 # 每类上限（仅对 mini / medium 生效；full 不限）

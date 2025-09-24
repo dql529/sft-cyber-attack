@@ -1,2 +1,2 @@
 encoder,max_len,cleaning,pooling,ts,weight_mode,multi_class,solver,acc,macro_f1,weighted_f1,fit_sec,key
-bert-base-uncased,256,task_only,mean,right,none,multinomial,lbfgs,0.7586,0.7598,0.7598,0.6800,mini__bert-base-uncased__L256__task__mean__tsR__prep1.0.0__unsw15_prompt_train_mini__unsw15_prompt_val_mini
+bert-base-uncased,256,task_only,mean,right,none,multinomial,lbfgs,0.7586,0.7598,0.7598,0.6400,mini__bert-base-uncased__L256__task__mean__tsR__prep1.0.0__unsw15_prompt_train_mini__unsw15_prompt_val_mini
