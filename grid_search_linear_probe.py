@@ -1,10 +1,11 @@
-# grid_search_linear_probe.py —— 通用 grid search (mini/medium/full)
+# grid_search_linear_probe.py —— 通用 grid search (mini/medium/full) + Pipeline保存
 import os, sys, time
 import numpy as np, pandas as pd
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.pipeline import make_pipeline
 from joblib import dump
 
 from nlp_shared import rp, PREP_VERSION, apply_cleaning, load_encoder, encode_texts
@@ -18,24 +19,15 @@ from config import (
     LABEL_MAP,
 )
 
-# ====== 顶部开关 ======
-# DATA_TIER = "mini"  # "mini" | "medium" | "full"
-# ENCODER_LIST = ["bert-base-uncased"]
-# MAX_LEN_LIST = [256]  # 可加 192
-# CLEAN_LIST = ["task_only", "raw_prompt"]
-# POOL_LIST = ["mean"]  # 可加 "cls"
-
-# WEIGHT_LIST = ["none", "pow0.7", "balanced"]
-# MC_SOLVER_LIST = [("ovr", "liblinear"), ("multinomial", "lbfgs")]
-# =====================
-DATA_TIER = "mini"
+# ====== 顶部开关（按需改）======
+DATA_TIER = "medium"  # "mini" | "medium" | "full"
 ENCODER_LIST = ["bert-base-uncased"]
 MAX_LEN_LIST = [256]
-CLEAN_LIST = ["task_only"]  # 去掉 raw_prompt
+CLEAN_LIST = ["task_only"]  # 已验证 raw_prompt 无益，收紧
 POOL_LIST = ["mean"]
 WEIGHT_LIST = ["none", "pow0.7"]  # 足够
-MC_SOLVER_LIST = [("multinomial", "lbfgs")]  # 避免 liblinear 弃用告警
-# =====================
+MC_SOLVER_LIST = [("multinomial", "lbfgs")]  # 稳定、无弃用警告
+
 MAX_ITER = 2000
 BATCH = 16
 SAVE_DIR = "./bert_outputs"
@@ -47,7 +39,7 @@ RESULTS_CSV = rp(f"{EXP_DIR}/results_linear_probe_{DATA_TIER}.csv")
 TOPK_CSV = rp(f"{EXP_DIR}/topk_linear_probe_{DATA_TIER}.csv")
 GROUPBEST_CSV = rp(f"{EXP_DIR}/groupbest_linear_probe_{DATA_TIER}.csv")
 TOPK = 3
-# =====================
+# ==============================
 
 os.makedirs(rp(SAVE_DIR), exist_ok=True)
 os.makedirs(rp(EXP_DIR), exist_ok=True)
@@ -55,7 +47,6 @@ if OVERWRITE_RESULTS and os.path.exists(RESULTS_CSV):
     os.remove(RESULTS_CSV)
 
 
-# ---- CSV 路径选择 ----
 def choose_paths(tier):
     t = str(tier).lower()
     if t == "mini":
@@ -67,7 +58,6 @@ def choose_paths(tier):
     raise ValueError(f"bad DATA_TIER={tier}")
 
 
-# ---- 命名工具 ----
 def sanitize(s):
     return (
         str(s).replace("\\", "_").replace("/", "_").replace(":", "_").replace(" ", "")
@@ -81,10 +71,10 @@ def key_for(enc, max_len, clean, pool, ts, train_csv, val_csv):
     ts_tag = "L" if ts == "left" else "R"
     bn_tr = os.path.splitext(os.path.basename(train_csv))[0]
     bn_va = os.path.splitext(os.path.basename(val_csv))[0]
+    # 包含预处理版本号，避免“撞旧缓存”
     return f"{DATA_TIER}__{enc_tag}__L{max_len}__{clean_tag}__{pool_tag}__ts{ts_tag}__prep{PREP_VERSION}__{bn_tr}__{bn_va}"
 
 
-# ---- 类权重策略 ----
 def class_weight_from(y, mode):
     mode = str(mode).lower()
     if mode == "none":
@@ -93,6 +83,8 @@ def class_weight_from(y, mode):
         return "balanced"
     if mode.startswith("pow"):
         p = float(mode.replace("pow", ""))
+        from collections import Counter
+
         cnt = Counter(y)
         n = len(y)
         k = len(cnt)
@@ -100,19 +92,23 @@ def class_weight_from(y, mode):
     raise ValueError(f"bad weight mode: {mode}")
 
 
-# ---- 训练 + 评估 ----
-def train_eval_lr(X_tr, y_tr, X_va, y_va, weight_mode, mc, solver):
-    scaler = StandardScaler()
-    Xtr = scaler.fit_transform(X_tr)
-    Xva = scaler.transform(X_va)
+def train_eval_lr(X_tr, y_tr, X_va, y_va, weight_mode, mc, solver, *, seed=11):
     cw = class_weight_from(y_tr, weight_mode)
-    clf = LogisticRegression(
-        max_iter=MAX_ITER, multi_class=mc, solver=solver, class_weight=cw
+    # 用 Pipeline 绑定标准化 + 逻辑回归，杜绝“忘记标准化”的错误
+    pipe = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(
+            max_iter=MAX_ITER,
+            multi_class=mc,
+            solver=solver,
+            class_weight=cw,
+            random_state=seed,
+        ),
     )
     t0 = time.time()
-    clf.fit(Xtr, y_tr)
+    pipe.fit(X_tr, y_tr)
     fit_s = time.time() - t0
-    y_pred = clf.predict(Xva)
+    y_pred = pipe.predict(X_va)
     acc = accuracy_score(y_va, y_pred)
     macro = f1_score(
         y_va, y_pred, labels=list(LABEL_MAP.keys()), average="macro", zero_division=0
@@ -120,10 +116,9 @@ def train_eval_lr(X_tr, y_tr, X_va, y_va, weight_mode, mc, solver):
     wavg = f1_score(
         y_va, y_pred, labels=list(LABEL_MAP.keys()), average="weighted", zero_division=0
     )
-    return clf, scaler, acc, macro, wavg, fit_s
+    return pipe, acc, macro, wavg, fit_s
 
 
-# ---- 主程序 ----
 def main():
     train_csv, val_csv = choose_paths(DATA_TIER)
     df_tr = pd.read_csv(train_csv)
@@ -136,14 +131,13 @@ def main():
         tok = mdl = device = None
         for max_len in MAX_LEN_LIST:
             for clean in CLEAN_LIST:
-                # 清洗文本
                 tr_texts = apply_cleaning(df_tr["text"].astype(str).tolist(), clean)
                 va_texts = apply_cleaning(df_va["text"].astype(str).tolist(), clean)
 
-                # 在 tr_texts / va_texts 生成之后加
+                # 健康检查
                 def describe(name, arr):
                     lens = [len(x) for x in arr]
-                    short_ratio = sum(l < 30 for l in lens) / len(lens)
+                    short_ratio = sum(l < 30 for l in lens) / max(1, len(lens))
                     print(
                         f"[CHECK] {name}: min={min(lens)}, avg={sum(lens)/len(lens):.1f}, max={max(lens)}, short(<30)={short_ratio:.2%}"
                     )
@@ -152,7 +146,6 @@ def main():
                 describe("task_only.val", va_texts)
                 print("[SAMPLE CLEAN] ", va_texts[0][:200])
 
-                # raw_prompt 保尾部；task_only 保开头
                 ts = "left" if clean == "raw_prompt" else "right"
 
                 for pool in POOL_LIST:
@@ -160,7 +153,7 @@ def main():
                     cache_tr = rp(f"{SAVE_DIR}/X_train__{KEY}.npy")
                     cache_va = rp(f"{SAVE_DIR}/X_val__{KEY}.npy")
 
-                    # 缓存
+                    # 载入/生成缓存向量
                     X_tr = X_va = None
                     if os.path.exists(cache_tr) and os.path.exists(cache_va):
                         try:
@@ -176,7 +169,6 @@ def main():
                         except Exception:
                             X_tr = X_va = None
 
-                    # 编码
                     if X_tr is None or X_va is None:
                         if tok is None:
                             tok, mdl, device = load_encoder(enc)
@@ -211,8 +203,8 @@ def main():
                     for weight_mode in WEIGHT_LIST:
                         for mc, solver in MC_SOLVER_LIST:
                             print(f"[FIT] {KEY} | weight={weight_mode} | {mc}/{solver}")
-                            clf, scaler, acc, macro, wavg, fit_s = train_eval_lr(
-                                X_tr, y_tr, X_va, y_va, weight_mode, mc, solver
+                            pipe, acc, macro, wavg, fit_s = train_eval_lr(
+                                X_tr, y_tr, X_va, y_va, weight_mode, mc, solver, seed=11
                             )
                             rec = {
                                 "data_tier": DATA_TIER,
@@ -236,7 +228,7 @@ def main():
                             }
                             all_rows.append(rec)
 
-    # 写主结果（重写，按宏F1/Acc 降序）
+    # 主结果：按 Macro-F1, Acc 降序
     res = pd.DataFrame(all_rows)
     order = [
         "data_tier",
@@ -262,7 +254,7 @@ def main():
     res.to_csv(RESULTS_CSV, index=False, float_format="%.4f")
     print(f"\n[RESULTS] saved -> {RESULTS_CSV}")
 
-    # TopK
+    # TopK 概览
     top = res.head(TOPK).copy()
     top.to_csv(TOPK_CSV, index=False, float_format="%.4f")
     print(f"[TOPK] saved -> {TOPK_CSV}")
@@ -285,7 +277,7 @@ def main():
         ]
     )
 
-    # 每个 (encoder,max_len,cleaning,pooling,ts) 组内选最优头
+    # 每组 (encoder,max_len,cleaning,pooling,ts) 内的最佳头
     grp_cols = ["encoder", "max_len", "cleaning", "pooling", "ts"]
     gb = (
         res.sort_values(by=["macro_f1", "acc"], ascending=[False, False])
@@ -306,6 +298,51 @@ def main():
         ]
     ].to_csv(GROUPBEST_CSV, index=False, float_format="%.4f")
     print(f"[GROUPBEST] saved -> {GROUPBEST_CSV}")
+
+    # 额外：保存 TopK 模型为 joblib（pipe + meta）
+    for i, r in top.reset_index(drop=True).iterrows():
+        KEY = r["key"]
+        cache_tr = rp(f"{SAVE_DIR}/X_train__{KEY}.npy")
+        cache_va = rp(f"{SAVE_DIR}/X_val__{KEY}.npy")
+        X_tr = np.load(cache_tr)
+        X_va = np.load(cache_va)
+
+        pipe, acc, macro, wavg, fit_s = train_eval_lr(
+            X_tr,
+            y_tr,
+            X_va,
+            y_va,
+            r["weight_mode"],
+            r["multi_class"],
+            r["solver"],
+            seed=11,
+        )
+        meta = {
+            "encoder": r["encoder"],
+            "max_len": int(r["max_len"]),
+            "pooling": r["pooling"],
+            "cleaning_mode": r["cleaning"],
+            "ts": r["ts"],
+            "prep_version": PREP_VERSION,
+            "script": "grid_search_linear_probe.py",
+            "data_tier": DATA_TIER,
+            "train_csv": train_csv,
+            "val_csv": val_csv,
+            "weight_mode": r["weight_mode"],
+            "multi_class": r["multi_class"],
+            "solver": r["solver"],
+            "key": KEY,
+            "metrics": {
+                "acc": float(acc),
+                "macro_f1": float(macro),
+                "weighted_f1": float(wavg),
+            },
+        }
+        outp = rp(
+            f"{SAVE_DIR}/linear_probe__{KEY}__w{r['weight_mode']}__{r['multi_class']}__{r['solver']}.joblib"
+        )
+        dump({"pipe": pipe, "meta": meta}, outp)
+        print(f"[SAVE] top{i+1} -> {outp}")
 
 
 if __name__ == "__main__":

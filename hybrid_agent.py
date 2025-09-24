@@ -1,19 +1,18 @@
-# hybrid_agent.py —— 无 argparse，自动加载 Top1 组合并评估
+# hybrid_agent.py —— 无 argparse，自动加载 Top1 组合并评估（Pipeline兼容）
 import os, sys
-import pandas as pd
-import numpy as np
+import numpy as np, pandas as pd
 from joblib import load
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.pipeline import make_pipeline
 
 from nlp_shared import rp, apply_cleaning, load_encoder, encode_texts
 from config import LABEL_MAP, PROMPT_VAL_CSV, PROMPT_VAL_CSV_MINI, PROMPT_VAL_CSV_MEDIUM
 
-# ====== 开关 ======
+# ====== 选择评测集 ======
 DATA_TIER = "medium"  # "mini" | "medium" | "full"
 BATCH = 16
-# =================
+# =======================
 
-# 1) 选取 Top1 的 joblib（来自 grid_search 导出的 TopK 表）
 EXP_DIR = rp("./experiments")
 SAVE_DIR = rp("./bert_outputs")
 topk_csv = rp(f"{EXP_DIR}/topk_linear_probe_{DATA_TIER}.csv")
@@ -36,24 +35,24 @@ if not os.path.exists(joblib_path):
 
 print(f"[MODEL] loading: {joblib_path}")
 bundle = load(joblib_path)
-clf = bundle["clf"]
-scaler = bundle["scaler"]
-meta = bundle.get("meta", {})
 
-# 2) 从 meta 读相同的预处理/编码协议
+# 兼容：优先使用 pipe；否则用 scaler+clf 组装成 pipe
+if "pipe" in bundle:
+    pipe = bundle["pipe"]
+    meta = bundle.get("meta", {})
+else:
+    clf = bundle["clf"]
+    scaler = bundle["scaler"]
+    pipe = make_pipeline(scaler, clf)
+    meta = bundle.get("meta", {})
+
 encoder = meta.get("encoder", "bert-base-uncased")
 max_len = int(meta.get("max_len", 256))
 pooling = meta.get("pooling", "mean")
 cleaning = meta.get("cleaning_mode", "task_only")
-ts = meta.get(
-    "ts", "left" if cleaning == "raw_prompt" else "right"
-)  # 兼容旧 meta：没有 ts 就按 cleaning 推断
+ts = meta.get("ts", "right" if cleaning == "task_only" else "left")
 
-print(
-    f"[CFG] encoder={encoder}  max_len={max_len}  pooling={pooling}  cleaning={cleaning}  ts={ts}"
-)
-
-# 3) 选择验证集（优先用 meta.val_csv；否则按 tier 走）
+# 选择验证集：优先使用 meta 中的 val_csv；否则按 tier
 val_csv = rp(
     meta.get(
         "val_csv",
@@ -65,7 +64,11 @@ val_csv = rp(
     )
 )
 
+print(
+    f"[CFG] encoder={encoder}  max_len={max_len}  pooling={pooling}  cleaning={cleaning}  ts={ts}"
+)
 print(f"[DATA] val_csv={val_csv}")
+
 df = pd.read_csv(val_csv)
 texts_raw = df["text"].astype(str).tolist()
 labels_true = df["label"].astype(int).to_numpy()
@@ -84,8 +87,7 @@ X = encode_texts(
     pooling=pooling,
     truncation_side=ts,
 )
-Xn = scaler.transform(X)
-y_pred = clf.predict(Xn)
+y_pred = pipe.predict(X)
 
 print("\n=== Hybrid (BERT linear-probe only) ===")
 print(
