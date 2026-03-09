@@ -5,8 +5,8 @@
 BASE_MODEL_PATH = "./models/deepseek-coder-1.3b-base"
 # BASE_MODEL_PATH = "./models/bert-base-uncased"
 
-RAW_DATA_CSV = "./data/Augmented-UNSW_NB15.csv"
-FILTERED_DATA_CSV = "./data/unsw15_filtered_nolog.csv"
+RAW_DATA_CSV = "./data/datasets/unsw_nb15/raw/Augmented-UNSW_NB15.csv"
+FILTERED_DATA_CSV = "./data/datasets/unsw_nb15/curated/unsw15_filtered_nolog.csv"
 
 PROMPT_TRAIN_CSV = "./data/prompt_csv/unsw15_prompt_train.csv"
 PROMPT_TRAIN_CSV_MINI = "./data/prompt_csv/unsw15_prompt_train_mini.csv"

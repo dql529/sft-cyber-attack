@@ -1,0 +1,21 @@
+{
+  "final_runs_root": "D:\\桌面\\Model_Agent\\runs\\final_results",
+  "bundle_dir": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle",
+  "retained_source_files": [
+    "D:\\桌面\\Model_Agent\\runs\\lightweight_paper_report\\lightweight_main_clean_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\lightweight_paper_report\\lightweight_robustness_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\lightweight_paper_report\\lightweight_recommended_methods__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\lightweight_fasttrack_report\\ablation_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\lightweight_fasttrack_report\\ablation_degraded_summary__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\lightweight_fasttrack_report\\split_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\lightweight_fasttrack_report\\split_significance__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\cic_external_report\\cic_external_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\cic_external_report\\cic_external_manifest.json",
+    "D:\\桌面\\Model_Agent\\runs\\cic_external_text\\summary__medium.csv",
+    "D:\\桌面\\Model_Agent\\runs\\cic_external_tabular\\baselines_seed_summary_medium.csv",
+    "D:\\桌面\\Model_Agent\\paper_revision_notes.md",
+    "D:\\桌面\\Model_Agent\\paper_hypotheses_current.md"
+  ],
+  "cleanup_enabled": true,
+  "no_hidden_context_file_added": true
+}
