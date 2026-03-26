@@ -30,10 +30,13 @@ from torch.utils.data import DataLoader, Dataset
 
 from robustness_utils import (
     DEFAULT_VAL_EXPERIMENTS,
+    canonical_condition_name,
+    canonical_method_name,
     compute_classification_metrics,
     count_torch_parameters,
     ensure_dir,
     estimate_linear_probe_params,
+    flatten_per_class_report,
     flatten_metric_record,
     mean_latency_ms,
     parse_csv_list,
@@ -43,6 +46,7 @@ from robustness_utils import (
     rp,
     save_json,
     set_seed,
+    slugify_token,
 )
 
 
@@ -139,6 +143,8 @@ def parse_args():
     ap.add_argument("--split-index", default="./data/prompt_csv/splits_unsw15_seed{seed}.npz")
     ap.add_argument("--val-experiments", default=",".join(DEFAULT_VAL_EXPERIMENTS))
     ap.add_argument("--output-root", default="./nn_outputs")
+    ap.add_argument("--export-per-class-dir", default="")
+    ap.add_argument("--dataset-name", default="UNSW")
     return ap.parse_args()
 
 
@@ -551,6 +557,52 @@ def save_metric_artifact(output_root, payload):
     return metrics_path
 
 
+def save_per_class_artifacts(
+    export_root: str,
+    dataset_name: str,
+    method_name: str,
+    condition: str,
+    metrics: dict,
+    seed: int,
+    split_seed: int,
+):
+    export_root = rp(export_root)
+    tables_dir = os.path.join(export_root, "tables")
+    per_class_dir = os.path.join(export_root, "per_class")
+    ensure_dir(tables_dir)
+    ensure_dir(per_class_dir)
+
+    report_path = os.path.join(tables_dir, "per_class_report.csv")
+    rows = flatten_per_class_report(
+        metrics,
+        dataset_name,
+        method_name,
+        condition,
+        seed=seed,
+        split_seed=split_seed,
+    )
+    new_df = pd.DataFrame(rows)
+    if os.path.exists(report_path):
+        old_df = pd.read_csv(report_path)
+        merged = pd.concat([old_df, new_df], ignore_index=True)
+        merged = merged.drop_duplicates(
+            subset=["dataset", "method", "condition", "seed", "split_seed", "class"],
+            keep="last",
+        )
+    else:
+        merged = new_df
+    merged.to_csv(report_path, index=False)
+
+    method_slug = slugify_token(canonical_method_name(method_name))
+    condition_slug = slugify_token(canonical_condition_name(condition))
+    dataset_slug = slugify_token(dataset_name)
+    cm_path = os.path.join(
+        per_class_dir,
+        f"confusion_matrix__{dataset_slug}__{method_slug}__{condition_slug}__seed-{seed}__split-{split_seed}.npy",
+    )
+    np.save(cm_path, np.asarray(metrics["confusion_matrix"], dtype=np.int64))
+
+
 def main():
     args = parse_args()
     ensure_dir(rp(args.output_root))
@@ -767,6 +819,16 @@ def main():
                     "num_cols": num_cols,
                 }
                 metrics_path = save_metric_artifact(rp(args.output_root), artifact)
+                if args.export_per_class_dir:
+                    save_per_class_artifacts(
+                        export_root=args.export_per_class_dir,
+                        dataset_name=args.dataset_name,
+                        method_name=model_name,
+                        condition=exp_name,
+                        metrics=metrics,
+                        seed=seed,
+                        split_seed=args.split_seed,
+                    )
                 row["metrics_json"] = os.path.basename(metrics_path)
                 rows.append(row)
 

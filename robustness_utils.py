@@ -240,3 +240,78 @@ def flatten_metric_record(
     if extra:
         row.update(extra)
     return row
+
+
+METHOD_NAME_MAP = {
+    "MLP_MaskAug": "MLP MaskAug",
+    "MLP": "MLP",
+    "tfidf_svm": "TF-IDF + SVM",
+    "tfidf_logreg": "TF-IDF + Logistic Regression",
+    "Logistic Regression": "Structured Logistic Regression",
+    "Linear SVM": "Structured Linear SVM",
+    "MLP_MaskOnly": "MLP MaskOnly",
+    "MLP_BlockOnly": "MLP BlockOnly",
+}
+
+CONDITION_NAME_MAP = {
+    "E1_clean": "Clean",
+    "E3_mask_10": "Mask10",
+    "E3_mask_30": "Mask30",
+    "E3_mask_50": "Mask50",
+    "E3_block_10": "Block10",
+    "E3_block_30": "Block30",
+    "E3_block_50": "Block50",
+    "E4_noise_10": "Noise10",
+    "E4_noise_30": "Noise30",
+    "E4_noise_50": "Noise50",
+}
+
+
+def canonical_method_name(method_name: str) -> str:
+    return METHOD_NAME_MAP.get(str(method_name), str(method_name))
+
+
+def canonical_condition_name(val_experiment: str) -> str:
+    return CONDITION_NAME_MAP.get(str(val_experiment), str(val_experiment))
+
+
+def slugify_token(value: str) -> str:
+    return (
+        str(value)
+        .replace(" ", "_")
+        .replace("+", "plus")
+        .replace("-", "_")
+        .replace("/", "_")
+    )
+
+
+def flatten_per_class_report(
+    metrics: Dict,
+    dataset: str,
+    method_name: str,
+    condition: str,
+    seed: int | None = None,
+    split_seed: int | None = None,
+) -> List[Dict]:
+    report = metrics.get("classification_report", {})
+    label_names = metrics.get("label_names", [])
+    rows = []
+    for label_name in label_names:
+        cls = report.get(label_name, {})
+        if not cls:
+            continue
+        rows.append(
+            {
+                "dataset": str(dataset),
+                "method": canonical_method_name(method_name),
+                "condition": canonical_condition_name(condition),
+                "seed": int(seed) if seed is not None else None,
+                "split_seed": int(split_seed) if split_seed is not None else None,
+                "class": str(label_name),
+                "precision": float(cls.get("precision", 0.0)),
+                "recall": float(cls.get("recall", 0.0)),
+                "f1": float(cls.get("f1-score", 0.0)),
+                "support": int(round(float(cls.get("support", 0.0)))),
+            }
+        )
+    return rows

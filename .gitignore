@@ -1,9 +1,50 @@
-/cached
-/checkpoints
-/data
-/models
-/results
-/nn_outputs
+/cached/
+/checkpoints/
+/models/
+/results/
+/nn_outputs/
 /experiments/
 /bert_outputs/
-/experiments/
+/runs/
+/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local scratch files
+/tmp_pdf_extract.txt
+/weekly_report_*.md
+/.tmp_repro*/
+
+# Keep the curated paper bundle, but skip raw per-class numpy exports.
+/deliverables/sci_upload_bundle/per_class/
+
+# Ignore all data by default, then re-include only the minimal files
+# needed to rerun the final paper experiments.
+/data/*
+!/data/datasets/
+/data/datasets/*
+!/data/datasets/unsw_nb15/
+/data/datasets/unsw_nb15/*
+!/data/datasets/unsw_nb15/curated/
+/data/datasets/unsw_nb15/curated/*
+!/data/datasets/unsw_nb15/curated/unsw15_filtered_nolog.csv
+
+!/data/prompt_csv/
+/data/prompt_csv/*
+!/data/prompt_csv/splits_unsw15_seed42.npz
+!/data/prompt_csv/splits_unsw15_seed52.npz
+!/data/prompt_csv/splits_unsw15_seed62.npz
+
+!/data/cic_binary_structured_review/
+/data/cic_binary_structured_review/*
+!/data/cic_binary_structured_review/manifest.json
+!/data/cic_binary_structured_review/cic_binary_structured_review_train_medium_E1_clean.csv
+!/data/cic_binary_structured_review/cic_binary_structured_review_val_medium_E1_clean.csv
+!/data/cic_binary_structured_review/cic_binary_structured_review_val_medium_E3_mask_30.csv
+!/data/cic_binary_structured_review/cic_binary_structured_review_val_medium_E3_mask_50.csv
+!/data/cic_binary_structured_review/cic_binary_structured_review_val_medium_E3_block_30.csv
+!/data/cic_binary_structured_review/cic_binary_structured_review_val_medium_E3_block_50.csv
+!/data/cic_binary_structured_review/cic_binary_structured_review_val_medium_E4_noise_30.csv
+!/data/cic_binary_structured_review/cic_binary_structured_review_val_medium_E4_noise_50.csv

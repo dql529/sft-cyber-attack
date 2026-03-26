@@ -17,5 +17,69 @@
     "D:\\桌面\\Model_Agent\\paper_hypotheses_current.md"
   ],
   "cleanup_enabled": true,
-  "no_hidden_context_file_added": true
+  "no_hidden_context_file_added": true,
+  "generated_assets": [
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\notes\\lightweight_paper_sections.tex",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main\\unsw_robustness_curve.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main\\gain_over_mlp.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main\\cic_robustness_curve.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main\\efficiency_tradeoff.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix\\relative_drop_from_clean.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix\\per_class_f1_gain_mask30.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix\\per_class_recall_gain_block30.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix\\confusion_matrix_unsw_mask30.pdf"
+  ],
+  "paper_main_figures": 4,
+  "paper_main_tables": 7,
+  "results_long_csv": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables\\results_long.csv",
+  "reviewer_shield_bundle": true,
+  "fair_unsw_text_summary": "D:\\桌面\\Model_Agent\\runs\\reviewer_shield\\unsw_fair_text\\seed42\\summary__medium.csv",
+  "selected_main_method": "MLP_MaskAugNoise",
+  "selected_paper_label": "MLP MaskAug",
+  "fair_cic_text_summary": "D:\\桌面\\Model_Agent\\runs\\reviewer_shield\\cic_fair_text\\summary__medium.csv",
+  "efficiency_manifest": "D:\\桌面\\Model_Agent\\runs\\reviewer_shield\\efficiency\\efficiency_manifest.json",
+  "dataset_protocol_table": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables\\dataset_protocol_table__medium.csv",
+  "class_count_table": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables\\unsw_class_counts__medium.csv",
+  "block_group_table": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables\\block_group_definitions__medium.csv",
+  "sensitivity_table": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables\\sensitivity_table__medium.csv",
+  "figure_upload_policy": "PDF-only",
+  "main_text_figures_dir": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main",
+  "appendix_figures_dir": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix",
+  "main_text_figure_files": [
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main\\unsw_robustness_curve.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main\\gain_over_mlp.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main\\cic_robustness_curve.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_main\\efficiency_tradeoff.pdf"
+  ],
+  "appendix_figure_files": [
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix\\relative_drop_from_clean.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix\\per_class_f1_gain_mask30.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix\\per_class_recall_gain_block30.pdf",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\figures_appendix\\confusion_matrix_unsw_mask30.pdf"
+  ],
+  "excluded_legacy_figure_files": [
+    "Legacy figure PDFs were removed from deliverables\\sci_upload_bundle\\figures after successful classification."
+  ],
+  "paper_appendix_figures": 4,
+  "paper_appendix_tables": 7,
+  "main_text_tables_dir": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_main",
+  "appendix_tables_dir": "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_appendix",
+  "main_text_table_files": [
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_main\\dataset_protocol_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_main\\lightweight_main_clean_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_main\\lightweight_robustness_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_main\\ablation_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_main\\split_significance__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_main\\efficiency_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_main\\cic_external_table__medium.csv"
+  ],
+  "appendix_table_files": [
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_appendix\\unsw_class_counts__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_appendix\\block_group_definitions__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_appendix\\sensitivity_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_appendix\\relative_drop_table__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_appendix\\per_class_f1_gain_mask30__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_appendix\\per_class_recall_gain_block30__medium.csv",
+    "D:\\桌面\\Model_Agent\\deliverables\\sci_upload_bundle\\tables_appendix\\per_class_summary__medium.csv"
+  ]
 }

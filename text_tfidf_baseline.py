@@ -9,17 +9,23 @@ import argparse
 import os
 import time
 
+import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.svm import LinearSVC
 
+from config import LABEL_MAP
+
 from robustness_utils import (
     DEFAULT_VAL_EXPERIMENTS,
+    canonical_condition_name,
+    canonical_method_name,
     compute_classification_metrics,
     ensure_dir,
     estimate_linear_probe_params,
+    flatten_per_class_report,
     flatten_metric_record,
     infer_prompt_paths,
     mean_latency_ms,
@@ -28,6 +34,7 @@ from robustness_utils import (
     rp,
     save_json,
     set_seed,
+    slugify_token,
 )
 
 
@@ -47,21 +54,44 @@ def parse_args():
     ap.add_argument("--split-seed", type=int, default=42)
     ap.add_argument("--max-features", type=int, default=50000)
     ap.add_argument("--ngram-max", type=int, default=2)
+    ap.add_argument("--min-df", type=float, default=1.0)
+    ap.add_argument("--max-df", type=float, default=1.0)
+    ap.add_argument("--norm", default="l2")
+    ap.add_argument("--use-idf", type=int, default=1)
+    ap.add_argument("--smooth-idf", type=int, default=1)
+    ap.add_argument("--sublinear-tf", type=int, default=0)
     ap.add_argument("--output-root", default="./text_baseline_outputs")
+    ap.add_argument("--export-per-class-dir", default="")
+    ap.add_argument("--dataset-name", default="UNSW")
     return ap.parse_args()
 
 
 def build_estimator(name: str, seed: int):
     if name == "tfidf_logreg":
         return LogisticRegression(
+            C=1.0,
             max_iter=2000,
             solver="saga",
             class_weight="balanced",
             random_state=seed,
         )
     if name == "tfidf_svm":
-        return LinearSVC(class_weight="balanced", random_state=seed)
+        return LinearSVC(C=1.0, class_weight="balanced", random_state=seed)
     raise ValueError(f"Unknown model '{name}'.")
+
+
+def normalize_min_df(value: float):
+    value = float(value)
+    if value >= 1.0 and float(value).is_integer():
+        return int(value)
+    return value
+
+
+def normalize_max_df(value: float):
+    value = float(value)
+    if value > 1.0 and float(value).is_integer():
+        return int(value)
+    return value
 
 
 def load_text_frame(csv_path: str, text_col: str):
@@ -88,8 +118,54 @@ def infer_label_metadata(*frames: pd.DataFrame):
             pairs = df[["label", "label_name"]].dropna().drop_duplicates()
             for label, name in pairs.itertuples(index=False):
                 label_name_map[int(label)] = str(name)
-    label_names = [label_name_map.get(i, f"class_{i}") for i in label_ids]
+    label_names = [label_name_map.get(i, LABEL_MAP.get(i, f"class_{i}")) for i in label_ids]
     return label_ids, label_names
+
+
+def save_per_class_artifacts(
+    export_root: str,
+    dataset_name: str,
+    method_name: str,
+    condition: str,
+    metrics: dict,
+    seed: int,
+    split_seed: int,
+):
+    export_root = rp(export_root)
+    tables_dir = os.path.join(export_root, "tables")
+    per_class_dir = os.path.join(export_root, "per_class")
+    ensure_dir(tables_dir)
+    ensure_dir(per_class_dir)
+
+    report_path = os.path.join(tables_dir, "per_class_report.csv")
+    rows = flatten_per_class_report(
+        metrics,
+        dataset_name,
+        method_name,
+        condition,
+        seed=seed,
+        split_seed=split_seed,
+    )
+    new_df = pd.DataFrame(rows)
+    if os.path.exists(report_path):
+        old_df = pd.read_csv(report_path)
+        merged = pd.concat([old_df, new_df], ignore_index=True)
+        merged = merged.drop_duplicates(
+            subset=["dataset", "method", "condition", "seed", "split_seed", "class"],
+            keep="last",
+        )
+    else:
+        merged = new_df
+    merged.to_csv(report_path, index=False)
+
+    method_slug = slugify_token(canonical_method_name(method_name))
+    condition_slug = slugify_token(canonical_condition_name(condition))
+    dataset_slug = slugify_token(dataset_name)
+    cm_path = os.path.join(
+        per_class_dir,
+        f"confusion_matrix__{dataset_slug}__{method_slug}__{condition_slug}__seed-{seed}__split-{split_seed}.npy",
+    )
+    np.save(cm_path, metrics["confusion_matrix"])
 
 
 def main():
@@ -125,6 +201,12 @@ def main():
                 max_features=args.max_features,
                 ngram_range=(1, args.ngram_max),
                 lowercase=True,
+                min_df=normalize_min_df(args.min_df),
+                max_df=normalize_max_df(args.max_df),
+                norm=args.norm,
+                use_idf=bool(args.use_idf),
+                smooth_idf=bool(args.smooth_idf),
+                sublinear_tf=bool(args.sublinear_tf),
             )
             vector_start = time.perf_counter()
             X_tr = vectorizer.fit_transform(train_texts)
@@ -192,6 +274,14 @@ def main():
                         params=params,
                         extra={
                             "dataset_label": args.dataset_label_override or val_experiment,
+                            "tfidf_min_df": args.min_df,
+                            "tfidf_max_df": args.max_df,
+                            "tfidf_norm": args.norm,
+                            "tfidf_use_idf": int(bool(args.use_idf)),
+                            "tfidf_smooth_idf": int(bool(args.smooth_idf)),
+                            "tfidf_sublinear_tf": int(bool(args.sublinear_tf)),
+                            "tfidf_ngram_max": args.ngram_max,
+                            "tfidf_max_features": args.max_features,
                         },
                     )
                     payload = {
@@ -212,6 +302,16 @@ def main():
                         ),
                     )
                     save_json(metrics_path, payload)
+                    if args.export_per_class_dir:
+                        save_per_class_artifacts(
+                            export_root=args.export_per_class_dir,
+                            dataset_name=args.dataset_name,
+                            method_name=model_name,
+                            condition=val_experiment,
+                            metrics=metrics,
+                            seed=seed,
+                            split_seed=args.split_seed,
+                        )
                     row["metrics_json"] = os.path.basename(metrics_path)
                     rows.append(row)
 

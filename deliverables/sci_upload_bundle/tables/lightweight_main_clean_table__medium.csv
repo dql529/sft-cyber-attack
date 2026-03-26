@@ -1,7 +1,0 @@
-method_name,text_col,val_experiment,acc_mean,acc_std,macro_f1_mean,macro_f1_std,seeds,total_params,trainable_params,macro_f1_base,delta_macro_f1_mean,delta_macro_f1_std,method_family,source_run
-MLP_MaskAug,structured_features,E1_clean,0.688455778438693,0.000255739535805,0.7037426541249405,0.000389049250151,3,216583.0,216583.0,,0.0,0.0,tabular,lightweight_tabular_full_3seed
-tfidf_svm,text,E1_clean,0.73535,0.0,0.7010114331309435,0.0,3,3969.0,3969.0,0.7010114331309435,0.0,0.0,text_baseline,lightweight_text_medium_3seed
-MLP,structured_features,E1_clean,0.6632285009175473,0.005704956106858,0.6766394543952864,0.0071911491947028,3,216583.0,216583.0,,0.0,0.0,tabular,lightweight_tabular_full_3seed
-tfidf_logreg,text,E1_clean,0.69555,0.010283603454042712,0.6258246160990493,0.009584727780039192,3,3969.0,3969.0,0.6258246160990493,0.0,0.0,text_baseline,lightweight_text_medium_3seed
-Logistic Regression,structured_features,E1_clean,0.5293931531987597,0.0,0.5121239547131095,0.0,3,1141.0,1141.0,,0.0,0.0,tabular,lightweight_tabular_full_3seed
-Linear SVM,structured_features,E1_clean,0.5056002024931975,0.0,0.4766018911367999,0.0,3,1141.0,1141.0,,0.0,0.0,tabular,lightweight_tabular_full_3seed

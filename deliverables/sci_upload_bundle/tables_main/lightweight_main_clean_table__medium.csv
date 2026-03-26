@@ -1,0 +1,7 @@
+paper_method,source_method_name,input_type,macro_f1,trainable_params
+TF-IDF + Logistic Regression,tfidf_logreg,Text,0.7722679925235116,4137
+TF-IDF + SVM,tfidf_svm,Text,0.7635868795401249,4137
+MLP MaskAug,MLP_MaskAugNoise,Structured,0.7036080768210563,216583
+MLP,MLP,Structured,0.6766394543952864,216583
+Structured Logistic Regression,Logistic Regression,Structured,0.5121239547131095,1141
+Structured Linear SVM,Linear SVM,Structured,0.4766018911367999,1141

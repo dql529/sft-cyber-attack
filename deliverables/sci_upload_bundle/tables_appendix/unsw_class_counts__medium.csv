@@ -1,0 +1,15 @@
+dataset,split,class_name,rows
+UNSW-NB15,train,Backdoor,3000
+UNSW-NB15,train,DoS,3000
+UNSW-NB15,train,Exploits,3000
+UNSW-NB15,train,Normal,3000
+UNSW-NB15,train,Reconnaissance,3000
+UNSW-NB15,train,Shellcode,3000
+UNSW-NB15,train,Worms,3000
+UNSW-NB15,evaluation,Backdoor,1466
+UNSW-NB15,evaluation,DoS,3000
+UNSW-NB15,evaluation,Exploits,3000
+UNSW-NB15,evaluation,Normal,3000
+UNSW-NB15,evaluation,Reconnaissance,3000
+UNSW-NB15,evaluation,Shellcode,1302
+UNSW-NB15,evaluation,Worms,1035

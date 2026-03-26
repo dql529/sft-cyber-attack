@@ -1,0 +1,5 @@
+group_id,features,rationale
+G1,"dur, spkts, dpkts, sbytes, dbytes",Joint flow-volume and packet-count counters collected from the same basic flow statistics module.
+G2,"sload, dload",Directional load-rate counters derived from throughput measurements.
+G3,"tcprtt, synack, ackdat",TCP handshake timing features describing RTT-related behavior.
+G4,"ct_srv_src, ct_state_ttl",State/count aggregation features derived from higher-level connection monitoring.
